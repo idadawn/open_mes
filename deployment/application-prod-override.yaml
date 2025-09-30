@@ -1,0 +1,12 @@
+# 生产环境覆盖配置
+spring:
+  redis:
+    host: redis
+    port: 6379
+    password: 123456
+    database: 0
+
+metaxk:
+  captcha:
+    enable: true
+

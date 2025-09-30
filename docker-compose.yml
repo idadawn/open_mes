@@ -1,7 +1,4 @@
-version: "3.8"
-
 services:
-  # 数据库服务
   db:
     container_name: mes-db
     image: mariadb:10.8
@@ -9,8 +6,8 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./data/db-vol:/var/lib/mysql
-      - ./部署和文档/data/sql/:/docker-entrypoint-initdb.d/
+      - ./deployment/data/db-vol:/var/lib/mysql
+      - ./deployment/data/sql/:/docker-entrypoint-initdb.d/
     environment:
       MYSQL_ROOT_PASSWORD: aa123456
       MYSQL_USER: db_user
@@ -28,14 +25,6 @@ services:
       --max_connections=1000
     networks:
       - mes-network
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      start_period: 10s
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  # Redis缓存服务
   redis:
     image: "redis:alpine"
     container_name: redis
@@ -43,19 +32,11 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./data/redis/data:/data
     ports:
       - "6379:6379"
     networks:
       - mes-network
-    command: redis-server --port 6379 --requirepass 123456 --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  # MinIO对象存储服务
+    command: redis-server --port 6379 --requirepass 123456  --appendonly yes
   minio:
     image: minio/minio:RELEASE.2022-06-25T15-50-16Z
     container_name: minio
@@ -70,87 +51,53 @@ services:
       MINIO_ROOT_USER: admin    #管理后台用户名
       MINIO_ROOT_PASSWORD: admin111 #管理后台密码，最小8个字符
     volumes:
-      - ./data/minio/data:/data               #映射当前目录下的data目录至容器内/data目录
-      - ./data/minio/config:/root/.minio/     #映射配置目录
+      - ./deployment/data/minio/data:/data               #映射当前目录下的data目录至容器内/data目录
+      - ./deployment/data/minio/config:/root/.minio/     #映射配置目录
     command: server --console-address '0.0.0.0:9001' --address '0.0.0.0:9000' /data  #指定容器中的目录 /data
     networks:
       - mes-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
-  # MES后端API服务
   mes-server-api:
+    #需要修改镜像名称
     container_name: metaxk-mes-server
     build:
-      context: ./部署和文档
-      dockerfile: Dockerfile
+      context: ./deployment
     image: metaxk-mes-server
     restart: unless-stopped
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./data/server/logs:/metaxk-mes-server/logs
+      #- ./data/server/java.security:/opt/java/openjdk/jre/lib/security/java.security
     environment:
       - TZ=Asia/Shanghai
-      - JAVA_OPTS=-Xms512m -Xmx512m -Djava.security.egd=file:/dev/./urandom
     ports:
       - 48080:48080
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      - db
+      - redis
+      - minio
     networks:
       - mes-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:48080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # 前端服务
   front:
+    #需要修改镜像名称
     container_name: metaxk-mes-front
     image: bitnami/nginx:latest
     restart: always
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-      - ./部署和文档/data/front/conf/nginx.conf:/opt/bitnami/nginx/conf/nginx.conf:rw
-      - ./部署和文档/data/front/dist:/app
+      - ./deployment/data/front/conf/nginx.conf:/opt/bitnami/nginx/conf/nginx.conf:rw
+      - ./deployment/data/front/conf/my_server_block.conf:/opt/bitnami/nginx/conf/server_blocks/my_server_block.conf:rw
+      - ./deployment/data/front/dist:/app
     environment:
       - TZ=Asia/Shanghai
     ports:
       - 48081:8080
     depends_on:
-      mes-server-api:
-        condition: service_healthy
+      - mes-server-api
+      - minio
     networks:
       - mes-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 networks:
   mes-network:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.name: mes-network
-
-volumes:
-  db-data:
-    driver: local
-  redis-data:
-    driver: local
-  minio-data:
-    driver: local
-  minio-config:
-    driver: local
